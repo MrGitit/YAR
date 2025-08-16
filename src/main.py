@@ -7,7 +7,7 @@ from .utils import getenv, ensure_dir
 from .llm import generate_script_from_article
 from .comfy_client import ComfyClient
 from .tts import tts_to_file
-from .video_editor import build_video
+from .video_editor import build_video, build_video_from_frame_sequences
 from .captions import script_to_srt
 
 def naive_scene_prompts(script: str, n: int) -> list[str]:
@@ -32,7 +32,7 @@ def main():
     ap.add_argument("--script_path")
     ap.add_argument("--summary")
     ap.add_argument("--scenes",type=int,default=int(getenv("MAX_SCENES","5") or 5))
-    ap.add_argument("--mode",choices=["stills","motion"],default="stills")
+    ap.add_argument("--mode",choices=["stills","animate"],default="stills")
     ap.add_argument("--out",default=getenv("OUTPUT_DIR","output/exports")+"/yar_demo.mp4")
     args=ap.parse_args()
 
@@ -59,20 +59,23 @@ def main():
     steps=int(getenv("STEPS","28")); seed=int(getenv("SEED","123456"))
     neg=getenv("NEGATIVE_PROMPT","lowres, watermark, logo, text, blurry, jpeg artifacts")
 
-    if args.mode=="motion":
-        print("[yellow]Motion mode is not wired yet — falling back to stills.[/yellow]")
-
-    images=[]
-    for i,p in enumerate(prompts,1):
-        images.append(client.generate_image(p,f"yar_scene_{i:02d}",seed+i,steps,w,h,neg))
-
-    out=build_video(images,per_scene,narration,
-                    fps=int(getenv("FPS","30")),
-                    crossfade=float(getenv("CROSSFADE_SECONDS","0.25")),
-                    out_path=Path(args.out))
+    if args.mode=="animate" and getenv("AD_ENABLED","false").lower() in ("1","true","yes","on"):
+        mm=getenv("AD_MOTION_MODEL","animatediffMotion_sdxlV10Beta.ckpt")
+        strength=float(getenv("AD_STRENGTH","0.6"))
+        nframes=int(getenv("AD_NUM_FRAMES","48"))
+        ad_fps=int(getenv("AD_FPS","24"))
+        seqs=[]
+        for i,p in enumerate(prompts,1):
+            frames=client.generate_ad_frames(p,f"yar_ad_scene_{i:02d}",seed+i,steps,w,h,neg,mm,strength,nframes,ad_fps)
+            seqs.append(frames)
+        out = build_video_from_frame_sequences(seqs, per_scene, narration, fps=ad_fps, crossfade=float(getenv("CROSSFADE_SECONDS","0.25")), out_path=Path(args.out))
+    else:
+        imgs=[]
+        for i,p in enumerate(prompts,1):
+            imgs.append(client.generate_image(p,f"yar_scene_{i:02d}",seed+i,steps,w,h,neg))
+        out = build_video(imgs, per_scene, narration, fps=int(getenv("FPS","30")), crossfade=float(getenv("CROSSFADE_SECONDS","0.25")), out_path=Path(args.out))
 
     srtp=Path(args.out).with_suffix(".srt"); script_to_srt(script_text,total,srtp)
     print(f"\n[bold green]DONE[/bold green] → {out}"); print(f"Captions → {srtp}")
-    print("Burn-in captions (optional):")
-    print(f"ffmpeg -i {out} -vf \"subtitles={srtp}\" -c:a copy {out.with_name(out.stem+'_sub.mp4')}")
+    print("Burn-in captions (optional):"); print(f"ffmpeg -i {out} -vf \"subtitles={srtp}\" -c:a copy {out.with_name(out.stem+'_sub.mp4')}")
 if __name__=="__main__": main()
