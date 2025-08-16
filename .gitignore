@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+output/
+logs/
+exports/
+ComfyUI/
+models/
+assets/
+.env
+.env.*
+!.env.example
+.DS_Store
+.vscode/
+Thumbs.db
