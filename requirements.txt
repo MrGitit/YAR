@@ -1,1 +1,9 @@
-# add packages when we implement features
+python-dotenv
+requests
+httpx
+moviepy==1.0.3
+pyttsx3
+srt
+numpy
+rich
+Pillow>=10
